@@ -2,17 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import PanoramaViewer from './PanoramaViewer'
 import './App.css'
 
-type CharacterId = 'qinglan' | 'yutang' | 'wanxing' | 'yumian' | 'zhixia' | 'suli'
+type MetricId = 'kindness' | 'wisdom' | 'energy' | 'curiosity'
 
-type Character = {
-  id: CharacterId
+type Metric = {
+  id: MetricId
   name: string
   archetype: string
   tone: string
-  color: string
 }
 
-type CharacterStats = Record<CharacterId, number>
+type Metrics = Record<MetricId, number>
 
 type Hotspot = {
   id: string
@@ -21,14 +20,14 @@ type Hotspot = {
   x: number
   y: number
   flag?: string
-  effects?: Partial<CharacterStats>
+  effects?: Partial<Metrics>
 }
 
 type Choice = {
   text: string
   reply: string
   target: string
-  effects?: Partial<CharacterStats>
+  effects?: Partial<Metrics>
   flags?: string[]
   requiresFlag?: string
 }
@@ -55,7 +54,7 @@ type HistoryItem = {
 
 type GameState = {
   nodeId: string
-  stats: CharacterStats
+  stats: Metrics
   flags: string[]
   unlocked: string[]
   history: HistoryItem[]
@@ -68,577 +67,437 @@ type SaveSlot = {
   state: GameState
 }
 
-const characters: Character[] = [
+const metrics: Metric[] = [
   {
-    id: 'qinglan',
-    name: '林清澜',
-    archetype: '知性投资顾问',
-    tone: '偏爱真诚和可靠',
-    color: '#8dd3c7',
+    id: 'kindness',
+    name: '友善',
+    archetype: '照顾伙伴',
+    tone: '适合帮助居民、安抚大家',
   },
   {
-    id: 'yutang',
-    name: '夏语棠',
-    archetype: '元气活动策划',
-    tone: '喜欢被认真回应',
-    color: '#ffb36b',
+    id: 'wisdom',
+    name: '智慧',
+    archetype: '观察推理',
+    tone: '适合解谜、整理线索',
   },
   {
-    id: 'wanxing',
-    name: '程晚星',
-    archetype: '自由摄影师',
-    tone: '在意空间和理解',
-    color: '#b7a6ff',
+    id: 'energy',
+    name: '活力',
+    archetype: '行动执行',
+    tone: '适合奔跑、搬运、带动气氛',
   },
   {
-    id: 'yumian',
-    name: '乔雨眠',
-    archetype: '甜品主理人',
-    tone: '会记住细节',
-    color: '#ffd1dc',
-  },
-  {
-    id: 'zhixia',
-    name: '沈知夏',
-    archetype: '成熟职场上司',
-    tone: '看重担当和边界',
-    color: '#80bfff',
-  },
-  {
-    id: 'suli',
-    name: '苏梨',
-    archetype: '潮流直播主',
-    tone: '讨厌被流量定义',
-    color: '#ff7aa8',
+    id: 'curiosity',
+    name: '好奇',
+    archetype: '探索发现',
+    tone: '适合寻找隐藏物和新办法',
   },
 ]
 
-const initialStats: CharacterStats = {
-  qinglan: 30,
-  yutang: 30,
-  wanxing: 30,
-  yumian: 30,
-  zhixia: 30,
-  suli: 30,
+const initialStats: Metrics = {
+  kindness: 35,
+  wisdom: 35,
+  energy: 35,
+  curiosity: 35,
 }
 
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`
 
 const storyNodes: StoryNode[] = [
   {
-    id: 'arrival',
+    id: 'plaza',
     chapter: '第一章',
-    time: '20:18',
-    title: '意外入住',
-    place: '共享公寓',
-    image: asset('panoramas/chapter-01-arrival.png'),
-    speaker: '旁白',
-    mood: '开门的瞬间，六道目光同时落在你身上。',
-    text: '租房平台发来的门锁密码竟然真的能打开。客厅、厨房、阳台和走廊都有人，她们像早就知道你会来，又像谁也不打算先解释。',
+    time: '09:00',
+    title: '欢迎广场',
+    place: '彩虹尾巴城',
+    image: asset('panoramas/animal-01-plaza.png'),
+    speaker: '小兔邮差',
+    mood: '彩虹风车刚要转动，六枚徽章忽然被风吹向城市各处。',
+    text: '今天是彩虹尾巴城一年一度的嘉年华。小兔邮差、狐狸发明家、绵羊老师和许多动物居民都在广场等开幕，可风车上的徽章不见了。',
     hotspots: [
       {
-        id: 'suitcase',
-        label: '行李箱',
-        note: '你的行李还停在门口，像是在提醒你：现在反悔还来得及。',
-        x: 48,
-        y: 76,
-      },
-      {
-        id: 'phone-invite',
-        label: '邀请短信',
-        note: '短信没有署名，只写着“今晚八点，别迟到”。',
-        x: 72,
-        y: 58,
-        flag: 'invite-clue',
-        effects: { qinglan: 2, wanxing: 1 },
-      },
-      {
-        id: 'fruit-plate',
-        label: '水果盘',
-        note: '夏语棠把水果递近了一点，像是把选择也递到了你手上。',
-        x: 32,
-        y: 55,
-        effects: { yutang: 2, yumian: 1 },
-      },
-    ],
-    choices: [
-      {
-        text: '先把事情说清楚：我可能走错了房间。',
-        reply: '林清澜轻轻点头：“至少你没有急着表演镇定。”',
-        target: 'dinner',
-        effects: { qinglan: 7, zhixia: 4 },
-        flags: ['honest-start'],
-      },
-      {
-        text: '接过水果，笑着说“看来我来得正好”。',
-        reply: '夏语棠笑得更灿烂了，苏梨也顺手把镜头压低，给你留了体面。',
-        target: 'dinner',
-        effects: { yutang: 7, suli: 4 },
-        flags: ['easygoing-start'],
-      },
-      {
-        text: '注意那条邀请短信，问是谁发来的。',
-        reply: '程晚星的快门声很轻：“你比看起来敏锐。”',
-        target: 'dinner',
-        effects: { wanxing: 6, qinglan: 3 },
-        flags: ['questioned-invite'],
-      },
-    ],
-  },
-  {
-    id: 'dinner',
-    chapter: '第二章',
-    time: '21:03',
-    title: '欢迎晚餐',
-    place: '公寓餐桌',
-    image: asset('panoramas/chapter-02-dinner.png'),
-    speaker: '夏语棠',
-    mood: '晚餐热闹得像一场不宣布规则的面试。',
-    text: '水果、甜点、红茶和几句轻飘飘的试探一起递到你面前。每个人都在笑，但每个人都在等你把注意力交给谁。',
-    hotspots: [
-      {
-        id: 'dessert',
-        label: '新做甜点',
-        note: '乔雨眠说这是试作品，却把最完整的一块留给了你。',
-        x: 51,
-        y: 62,
-        effects: { yumian: 4 },
-      },
-      {
-        id: 'camera',
-        label: '相机',
-        note: '程晚星的相机没有对准你，反而拍下了所有人的反应。',
-        x: 79,
+        id: 'windmill',
+        label: '彩虹风车',
+        note: '风车中心空了六个位置。每找回一枚徽章，风车就会亮起一圈颜色。',
+        x: 52,
         y: 42,
-        flag: 'camera-seen',
-        effects: { wanxing: 2 },
+        flag: 'saw-windmill',
+        effects: { curiosity: 3, wisdom: 2 },
       },
       {
-        id: 'work-call',
-        label: '未接电话',
-        note: '沈知夏把手机扣在桌面，屏幕亮了又灭。',
-        x: 22,
-        y: 65,
-        effects: { zhixia: 2 },
-      },
-    ],
-    choices: [
-      {
-        text: '帮乔雨眠把甜点分给所有人。',
-        reply: '乔雨眠低声说了句谢谢。她没有抢话，但眼神明显亮了一下。',
-        target: 'blackout',
-        effects: { yumian: 8, yutang: 2 },
-        flags: ['shared-dessert'],
-      },
-      {
-        text: '接住夏语棠的玩笑，把气氛热起来。',
-        reply: '客厅笑声一下散开，夏语棠靠回椅背，像是终于不用一个人撑场。',
-        target: 'blackout',
-        effects: { yutang: 8, suli: 3 },
-      },
-      {
-        text: '提醒沈知夏：如果电话重要，可以先处理。',
-        reply: '沈知夏看了你两秒，才拿起手机：“你倒是不急着证明自己。”',
-        target: 'blackout',
-        effects: { zhixia: 8, qinglan: 2 },
-      },
-    ],
-  },
-  {
-    id: 'blackout',
-    chapter: '第三章',
-    time: '22:26',
-    title: '雨夜停电',
-    place: '公寓客厅',
-    image: asset('panoramas/chapter-03-blackout.png'),
-    speaker: '旁白',
-    mood: '窗外雷声压下来，房间忽然只剩手机光和呼吸声。',
-    text: '停电发生得太巧。有人抓住你的手，有人让你去看电闸，还有人盯着那部亮屏的手机。你意识到，今晚不是租房乌龙那么简单。',
-    hotspots: [
-      {
-        id: 'breaker',
-        label: '电闸箱',
-        note: '电闸没有跳。停电更像是整栋楼的问题。',
-        x: 83,
-        y: 48,
-        flag: 'breaker-safe',
-        effects: { zhixia: 3 },
-      },
-      {
-        id: 'lit-phone',
-        label: '亮屏手机',
-        note: '屏幕上闪过同一条邀请格式，发送时间比你的短信更早。',
-        x: 38,
-        y: 68,
-        flag: 'shared-invite',
-        effects: { qinglan: 2, wanxing: 2 },
-      },
-      {
-        id: 'held-hand',
-        label: '被牵住的手',
-        note: '对方没有用力，只是在等你决定要不要回握。',
-        x: 57,
-        y: 52,
-        effects: { yutang: 2, yumian: 2 },
-      },
-    ],
-    choices: [
-      {
-        text: '先确认所有人安全，再去查电闸。',
-        reply: '沈知夏接过你的手电：“顺序对了，事情就不会乱。”',
-        target: 'park',
-        effects: { zhixia: 7, qinglan: 3, yumian: 2 },
-        flags: ['kept-calm'],
-      },
-      {
-        text: '回握那只手，开玩笑缓和紧张。',
-        reply: '夏语棠笑出了声，雨声似乎也没那么近了。',
-        target: 'park',
-        effects: { yutang: 7, suli: 3 },
-      },
-      {
-        text: '追问那条共同邀请短信。',
-        reply: '程晚星没有躲开你的视线：“有些答案，太早知道就不好玩了。”',
-        target: 'park',
-        effects: { wanxing: 7, qinglan: 2 },
-        flags: ['pressed-mystery'],
-        requiresFlag: 'shared-invite',
-      },
-    ],
-  },
-  {
-    id: 'park',
-    chapter: '第四章',
-    time: '07:12',
-    title: '城市晨跑',
-    place: '湖边公园',
-    image: asset('panoramas/chapter-04-park.png'),
-    speaker: '夏语棠',
-    mood: '昨晚的选择没有消失，它们只是换成清晨的眼神。',
-    text: '你被拉到公园跑道，原以为只是晨跑，却在湖边陆续遇见所有人。她们对昨晚的态度不一样，空气反而比停电时更难回答。',
-    hotspots: [
-      {
-        id: 'coffee',
-        label: '咖啡',
-        note: '林清澜的咖啡多买了一杯，杯套上没有名字。',
-        x: 67,
-        y: 46,
-        effects: { qinglan: 3 },
-      },
-      {
-        id: 'photo-bench',
-        label: '长椅照片',
-        note: '照片里的你在停电时先看向了所有人，而不是某一个人。',
-        x: 74,
-        y: 58,
-        flag: 'group-photo',
-        effects: { wanxing: 3 },
-      },
-      {
-        id: 'breakfast',
-        label: '早餐袋',
-        note: '乔雨眠说只是多买了，包装却刚好是你昨晚称赞过的口味。',
+        id: 'map',
+        label: '节日地图',
+        note: '地图上画着气球大道、发明工坊、花车森林、点心集市和星光舞台。',
         x: 29,
-        y: 61,
-        effects: { yumian: 4 },
-      },
-    ],
-    choices: [
-      {
-        text: '陪夏语棠跑完最后一圈。',
-        reply: '夏语棠喘着气笑：“你不是最快的，但你没有半路消失。”',
-        target: 'cafe',
-        effects: { yutang: 8, suli: 1 },
-      },
-      {
-        text: '接过林清澜的咖啡，问她真正想确认什么。',
-        reply: '林清澜看向湖面：“确认你会不会把温柔当成策略。”',
-        target: 'cafe',
-        effects: { qinglan: 8, zhixia: 2 },
-        flags: ['asked-qinglan'],
-      },
-      {
-        text: '坐到程晚星旁边，不问照片，只陪她看光。',
-        reply: '程晚星把相机放低：“你终于学会不急着解释画面了。”',
-        target: 'cafe',
-        effects: { wanxing: 8 },
-      },
-    ],
-  },
-  {
-    id: 'cafe',
-    chapter: '第五章',
-    time: '15:40',
-    title: '甜品店临时工',
-    place: '乔雨眠的甜品店',
-    image: asset('panoramas/chapter-05-cafe.png'),
-    speaker: '乔雨眠',
-    mood: '订单、采访、电话和误会一起挤进小小的甜品店。',
-    text: '你刚系上围裙，门铃就响个不停。每个人都带着自己的麻烦出现，而乔雨眠第一次没有说“没关系”。',
-    hotspots: [
-      {
-        id: 'new-cake',
-        label: '新口味蛋糕',
-        note: '酸甜平衡得很好，像乔雨眠终于说出口的一点坚持。',
-        x: 46,
-        y: 63,
-        effects: { yumian: 4 },
-      },
-      {
-        id: 'live-light',
-        label: '补光灯',
-        note: '苏梨把灯调暗，避开了不想出镜的顾客。',
-        x: 81,
-        y: 43,
-        effects: { suli: 3 },
-      },
-      {
-        id: 'urgent-folder',
-        label: '文件夹',
-        note: '沈知夏的文件边角被雨水打湿，她显然是临时赶来的。',
-        x: 24,
-        y: 56,
-        effects: { zhixia: 3 },
-      },
-    ],
-    choices: [
-      {
-        text: '先帮乔雨眠稳住后厨。',
-        reply: '乔雨眠终于抬头：“我其实……是希望有人先问问我累不累。”',
-        target: 'rooftop',
-        effects: { yumian: 9, qinglan: 1 },
-        flags: ['protected-yumian'],
-      },
-      {
-        text: '提醒苏梨直播前先征得店里同意。',
-        reply: '苏梨关掉预览，认真地说：“你没有把我当麻烦。”',
-        target: 'rooftop',
-        effects: { suli: 8, zhixia: 2 },
-      },
-      {
-        text: '接过沈知夏的文件，同时安排店内订单。',
-        reply: '沈知夏难得笑了一下：“你可以慌，但没有乱。”',
-        target: 'rooftop',
-        effects: { zhixia: 8, yumian: 2 },
-        flags: ['handled-pressure'],
-      },
-    ],
-  },
-  {
-    id: 'rooftop',
-    chapter: '第六章',
-    time: '18:35',
-    title: '天台告白预演',
-    place: '城市天台',
-    image: asset('panoramas/chapter-06-rooftop.png'),
-    speaker: '程晚星',
-    mood: '夕阳很好，镜头也很好，只是现实总在最会破坏气氛的时候出现。',
-    text: '程晚星让你配合一段告白预演。你刚站到镜头前，沈知夏带着工作危机赶到。浪漫和责任同时等你开口。',
-    hotspots: [
-      {
-        id: 'camera-tripod',
-        label: '三脚架',
-        note: '镜头没有开录，程晚星只是想知道你会怎么面对真话。',
-        x: 58,
-        y: 47,
-        effects: { wanxing: 3 },
-      },
-      {
-        id: 'flower',
-        label: '花束',
-        note: '夏语棠说花只是道具，但包装纸明显重新扎过。',
-        x: 32,
-        y: 66,
-        effects: { yutang: 3 },
-      },
-      {
-        id: 'work-message',
-        label: '紧急消息',
-        note: '沈知夏没有要求你站队，只说：“你自己判断轻重。”',
-        x: 76,
-        y: 56,
-        effects: { zhixia: 3 },
-      },
-    ],
-    choices: [
-      {
-        text: '完成告白预演，但把话说给镜头后的每个人听。',
-        reply: '程晚星沉默了很久：“你比我想象中贪心，也比我想象中坦白。”',
-        target: 'launch',
-        effects: { wanxing: 8, yutang: 2, yumian: 2 },
-        flags: ['public-heart'],
-      },
-      {
-        text: '先处理工作危机，回来后向大家解释。',
-        reply: '沈知夏收起文件：“成年人不是没有心动，是知道心动之后还要负责。”',
-        target: 'launch',
-        effects: { zhixia: 9, qinglan: 2 },
-        flags: ['chose-duty'],
-      },
-      {
-        text: '暂停拍摄，承认自己不想用预演逃避真实选择。',
-        reply: '林清澜看着你：“这句话，比任何告白都难。”',
-        target: 'launch',
-        effects: { qinglan: 8, wanxing: 2 },
-        flags: ['refused-performance'],
-      },
-    ],
-  },
-  {
-    id: 'launch',
-    chapter: '第七章',
-    time: '20:10',
-    title: '发布会风波',
-    place: '直播发布会',
-    image: asset('panoramas/chapter-07-launch.png'),
-    speaker: '苏梨',
-    mood: '直播灯一亮，误会就有了自己的速度。',
-    text: '剪辑片段被误读，你和她们的关系成了所有人的谈资。苏梨站在镜头前，第一次没有急着用笑容救场。',
-    hotspots: [
-      {
-        id: 'muted-phone',
-        label: '静音手机',
-        note: '消息不断跳出，但你越看越说不清。',
-        x: 44,
-        y: 70,
-        flag: 'public-pressure',
-      },
-      {
-        id: 'water',
-        label: '一杯水',
-        note: '乔雨眠把水递给你，没有问你要怎么选。',
-        x: 61,
         y: 62,
-        effects: { yumian: 2 },
+        effects: { wisdom: 3 },
       },
       {
-        id: 'stage-light',
-        label: '直播灯',
-        note: '苏梨没有关灯。她在等你决定是否站到光里。',
-        x: 71,
-        y: 39,
-        effects: { suli: 3 },
+        id: 'ribbon',
+        label: '飘带线索',
+        note: '一条蓝色飘带挂在路灯上，指向气球最多的街道。',
+        x: 78,
+        y: 36,
+        flag: 'blue-ribbon',
+        effects: { curiosity: 2 },
       },
     ],
     choices: [
       {
-        text: '公开说明：不消费任何人的善意，也不甩锅给苏梨。',
-        reply: '苏梨低头笑了一下，像终于从镜头里走回真实世界。',
-        target: 'finale',
-        effects: { suli: 10, qinglan: 2, zhixia: 2 },
-        flags: ['public-responsibility'],
+        text: '先安慰小兔邮差，大家一起找一定更快。',
+        reply: '小兔邮差的耳朵重新竖起来：“那我们先从最近的气球大道开始！”',
+        target: 'balloon',
+        effects: { kindness: 7, energy: 2 },
+        flags: ['team-start'],
       },
       {
-        text: '先暂停发布会，把所有人带到后台沟通。',
-        reply: '沈知夏替你挡住追问，林清澜则把门轻轻关上。',
-        target: 'finale',
-        effects: { zhixia: 6, qinglan: 5, yumian: 2 },
-        flags: ['private-talk'],
+        text: '先看地图，按风向和飘带判断徽章路线。',
+        reply: '绵羊老师点点头：“有计划地行动，庆典就不会乱。”',
+        target: 'balloon',
+        effects: { wisdom: 7, curiosity: 2 },
+        flags: ['planned-route'],
       },
       {
-        text: '承认自己一直在回避选择，请她们给你最后一次解释。',
-        reply: '没有人立刻原谅你。但也没有人马上离开。',
-        target: 'finale',
-        effects: { wanxing: 3, yutang: 3, yumian: 3, suli: 3 },
-        flags: ['confessed-avoidance'],
+        text: '举起手，邀请附近居民一起报名做小队。',
+        reply: '广场响起欢呼声，狐狸发明家已经推来一辆小工具车。',
+        target: 'balloon',
+        effects: { energy: 7, kindness: 2 },
       },
     ],
   },
   {
-    id: 'finale',
-    chapter: '第八章',
-    time: '23:48',
-    title: '最后的全景房间',
-    place: '共享公寓',
-    image: asset('panoramas/chapter-08-finale.png'),
-    speaker: '旁白',
-    mood: '所有线索回到最初的房间，真相比误会更温柔。',
-    text: '那条邀请短信不是恶作剧。她们都曾在不同时间被你帮助过，而今晚只是想确认：你是不是仍然会认真对待每一个人。',
+    id: 'balloon',
+    chapter: '第二章',
+    time: '09:35',
+    title: '气球大道',
+    place: '气球大道',
+    image: asset('panoramas/animal-02-balloon-avenue.png'),
+    speaker: '小兔邮差',
+    mood: '一枚徽章卡在气球束里，颜色路线却被风吹乱了。',
+    text: '小兔邮差要把邀请卡送到不同摊位，可气球颜色和路线卡混在一起。只要整理好颜色顺序，就能安全取下第一枚徽章。',
     hotspots: [
       {
-        id: 'memory-table',
-        label: '回忆桌',
-        note: '照片、甜点、咖啡、花和文件摆在一起，像你一路留下的答案。',
-        x: 50,
-        y: 65,
-        flag: 'memory-table',
+        id: 'color-cards',
+        label: '颜色路线卡',
+        note: '红、黄、蓝、绿四张卡对应四条小路，蓝色卡背面有风车图案。',
+        x: 42,
+        y: 58,
+        flag: 'color-route',
+        effects: { wisdom: 4 },
       },
       {
-        id: 'closed-live',
-        label: '关闭的直播',
-        note: '苏梨把手机扣下：“这次，不给别人看。”',
-        x: 75,
-        y: 51,
-        effects: { suli: 2 },
+        id: 'balloon-knot',
+        label: '气球结',
+        note: '气球线没有打死结，只要有人稳住绳子，就能轻轻解开。',
+        x: 63,
+        y: 35,
+        effects: { kindness: 2, energy: 2 },
       },
       {
-        id: 'old-message',
-        label: '旧短信',
-        note: '林清澜说：“现在你知道了，选择仍然算数。”',
-        x: 27,
-        y: 53,
-        effects: { qinglan: 2 },
+        id: 'tiny-bell',
+        label: '小铃铛',
+        note: '铃声会提醒小动物让开路线，适合在人多的地方使用。',
+        x: 82,
+        y: 64,
+        effects: { curiosity: 3 },
       },
     ],
     choices: [
       {
-        text: '说出最想坚定选择的人。',
-        reply: '房间安静下来，你终于不再把真诚拖到下一秒。',
-        target: 'ending:auto',
-        flags: ['single-ending'],
+        text: '按颜色路线卡重新排队，再取徽章。',
+        reply: '队伍一下顺畅起来，第一枚“友善徽章”轻轻落到你的手心。',
+        target: 'workshop',
+        effects: { wisdom: 6, kindness: 4 },
+        flags: ['badge-kindness'],
       },
       {
-        text: '承认自己还没准备好恋爱，但想把误会全部解开。',
-        reply: '她们没有为难你。成年人之间，清楚也是一种温柔。',
-        target: 'ending:group',
-        flags: ['group-ending'],
+        text: '请大家一起稳住气球绳，小兔负责解结。',
+        reply: '大家数到三同时用力，气球没有飞走，徽章也找回来了。',
+        target: 'workshop',
+        effects: { kindness: 7, energy: 3 },
+        flags: ['badge-kindness'],
       },
       {
-        text: '选择先离开这间房，认真处理事业和自己。',
-        reply: '你带走行李，也带走了每个人留下的一点光。',
-        target: 'ending:career',
-        flags: ['career-ending'],
+        text: '摇响小铃铛，先给道路清出安全空间。',
+        reply: '小动物们笑着让出一圈空地，猎豹巡逻员向你竖起大拇指。',
+        target: 'workshop',
+        effects: { energy: 5, wisdom: 3 },
+        flags: ['safe-route', 'badge-kindness'],
+      },
+    ],
+  },
+  {
+    id: 'workshop',
+    chapter: '第三章',
+    time: '10:20',
+    title: '发明工坊',
+    place: '泡泡风车工坊',
+    image: asset('panoramas/animal-03-workshop.png'),
+    speaker: '狐狸发明家',
+    mood: '泡泡风车停住了，第二枚徽章藏在一串透明泡泡里。',
+    text: '狐狸发明家的泡泡风车本来要给嘉年华制造彩虹泡泡，可齿轮顺序装反了。工坊里到处是安全工具、泡泡瓶和小零件。',
+    hotspots: [
+      {
+        id: 'gear-tray',
+        label: '齿轮盘',
+        note: '三个齿轮大小不同，最小的齿轮边缘有一滴彩虹色泡泡液。',
+        x: 37,
+        y: 66,
+        flag: 'gear-clue',
+        effects: { wisdom: 4 },
+      },
+      {
+        id: 'bubble-jar',
+        label: '泡泡瓶',
+        note: '瓶子标签没有文字，但颜色从浅到深排成一条线。',
+        x: 68,
+        y: 57,
+        effects: { curiosity: 3 },
+      },
+      {
+        id: 'safety-gloves',
+        label: '安全手套',
+        note: '绵羊老师提醒：动手前先戴手套，发明也要注意安全。',
+        x: 22,
+        y: 51,
+        effects: { kindness: 2, wisdom: 2 },
+      },
+    ],
+    choices: [
+      {
+        text: '先戴好手套，再按大小顺序装回齿轮。',
+        reply: '泡泡风车咔哒一声转起来，第二枚“智慧徽章”从泡泡里浮出。',
+        target: 'forest',
+        effects: { wisdom: 8, kindness: 2 },
+        flags: ['badge-wisdom'],
+      },
+      {
+        text: '观察泡泡颜色，找出风车缺少的方向。',
+        reply: '狐狸发明家惊喜地拍了拍工具车：“你看见了风的颜色！”',
+        target: 'forest',
+        effects: { curiosity: 7, wisdom: 4 },
+        flags: ['badge-wisdom'],
+      },
+      {
+        text: '请小鼠学徒一起检查零件，每人负责一处。',
+        reply: '工坊变得有条不紊，大家一起修好了泡泡风车。',
+        target: 'forest',
+        effects: { kindness: 6, energy: 4 },
+        flags: ['badge-wisdom'],
+      },
+    ],
+  },
+  {
+    id: 'forest',
+    chapter: '第四章',
+    time: '11:15',
+    title: '花车森林',
+    place: '花车森林',
+    image: asset('panoramas/animal-04-flower-forest.png'),
+    speaker: '长颈鹿园艺师',
+    mood: '花车少了一圈花环，第三枚徽章挂在最高的叶子后面。',
+    text: '花车森林里香气很轻，蝴蝶在彩带间飞来飞去。长颈鹿园艺师想让每辆花车都恢复颜色，但花环需要大家分工完成。',
+    hotspots: [
+      {
+        id: 'tall-leaf',
+        label: '高处叶片',
+        note: '叶片后面有一小片金色闪光，像是徽章边缘。',
+        x: 56,
+        y: 29,
+        flag: 'high-leaf',
+        effects: { curiosity: 3 },
+      },
+      {
+        id: 'petal-basket',
+        label: '花瓣篮',
+        note: '花瓣按大小分好，适合做从小到大的渐变花环。',
+        x: 31,
+        y: 68,
+        effects: { wisdom: 3 },
+      },
+      {
+        id: 'water-can',
+        label: '洒水壶',
+        note: '小刺猬们够不到水壶把手，但它们已经把路让出来了。',
+        x: 73,
+        y: 62,
+        effects: { kindness: 3 },
+      },
+    ],
+    choices: [
+      {
+        text: '请长颈鹿看高处，你负责整理地面的花瓣。',
+        reply: '高处和低处同时完成，第三枚“好奇徽章”从叶片后亮了起来。',
+        target: 'market',
+        effects: { curiosity: 7, wisdom: 4 },
+        flags: ['badge-curiosity'],
+      },
+      {
+        text: '带小刺猬们传递花瓣，让每只动物都参与。',
+        reply: '花环绕过整辆花车，大家都找到了自己能做的部分。',
+        target: 'market',
+        effects: { kindness: 7, energy: 3 },
+        flags: ['badge-curiosity'],
+      },
+      {
+        text: '先浇水，让花瓣恢复颜色再装饰。',
+        reply: '花瓣重新舒展开，蝴蝶带着徽章飞回花车顶端。',
+        target: 'market',
+        effects: { wisdom: 4, energy: 5 },
+        flags: ['badge-curiosity'],
+      },
+    ],
+  },
+  {
+    id: 'market',
+    chapter: '第五章',
+    time: '12:10',
+    title: '点心集市',
+    place: '健康点心集市',
+    image: asset('panoramas/animal-05-snack-market.png'),
+    speaker: '河马厨师',
+    mood: '午餐时间到了，第四枚徽章被放进了最受欢迎的健康点心篮。',
+    text: '河马厨师准备了水果松饼、蔬菜串和清凉果汁。可是队伍太长，口味标记也被风吹乱了，需要有人帮忙重新安排摊位。',
+    hotspots: [
+      {
+        id: 'fruit-muffin',
+        label: '水果松饼',
+        note: '松饼闻起来很香，旁边放着低糖水果牌，但没有文字。',
+        x: 43,
+        y: 60,
+        effects: { curiosity: 2, kindness: 2 },
+      },
+      {
+        id: 'smoothie-spinner',
+        label: '果汁转盘',
+        note: '转盘卡住了，狐狸发明家认为只要轻轻反转一格就好。',
+        x: 69,
+        y: 54,
+        effects: { wisdom: 3 },
+      },
+      {
+        id: 'recycle-bin',
+        label: '回收桶',
+        note: '企鹅一家正在找回收桶，保持集市干净也是庆典的一部分。',
+        x: 20,
+        y: 70,
+        effects: { kindness: 3 },
+      },
+    ],
+    choices: [
+      {
+        text: '先把回收桶和排队路线摆清楚。',
+        reply: '集市变得干净又顺畅，第四枚“活力徽章”出现在点心篮旁。',
+        target: 'stage',
+        effects: { kindness: 6, wisdom: 4 },
+        flags: ['badge-energy'],
+      },
+      {
+        text: '修好果汁转盘，让大家按颜色选择口味。',
+        reply: '果汁转盘转出一圈彩虹，河马厨师开心地挥起围裙。',
+        target: 'stage',
+        effects: { energy: 7, curiosity: 3 },
+        flags: ['badge-energy'],
+      },
+      {
+        text: '请大家轮流推荐一种健康点心。',
+        reply: '每个摊位都有了笑声，连排队也像一场小游戏。',
+        target: 'stage',
+        effects: { kindness: 5, energy: 5 },
+        flags: ['badge-energy'],
+      },
+    ],
+  },
+  {
+    id: 'stage',
+    chapter: '第六章',
+    time: '19:30',
+    title: '星光舞台',
+    place: '星光舞台',
+    image: asset('panoramas/animal-06-starry-stage.png'),
+    speaker: '旁白',
+    mood: '夜晚降临，彩虹风车终于等回了所有徽章。',
+    text: '动物居民们聚到星光舞台。风车缺少最后一步：把今天学到的友善、智慧、活力和好奇一起点亮。',
+    hotspots: [
+      {
+        id: 'badge-wheel',
+        label: '徽章风车',
+        note: '四枚徽章亮着不同颜色，还差大家一起喊出口号的那一刻。',
+        x: 50,
+        y: 43,
+        flag: 'ready-final',
+      },
+      {
+        id: 'music-shell',
+        label: '音乐贝壳',
+        note: '松鼠乐队把节奏藏在贝壳里，轻敲三下就能开始表演。',
+        x: 27,
+        y: 58,
+        effects: { energy: 3 },
+      },
+      {
+        id: 'thank-card',
+        label: '感谢卡',
+        note: '每张卡都画着今天帮助过你的动物朋友。',
+        x: 76,
+        y: 64,
+        effects: { kindness: 3 },
+      },
+    ],
+    choices: [
+      {
+        text: '邀请所有居民一起数到三，点亮彩虹风车。',
+        reply: '彩虹风车转了起来，整座城市都被温暖的光照亮。',
+        target: 'ending:team',
+        effects: { kindness: 5, energy: 5 },
+      },
+      {
+        text: '先回顾每一枚徽章的故事，再开始开幕表演。',
+        reply: '大家听见自己的努力被记住，掌声从舞台传到街角。',
+        target: 'ending:wise',
+        effects: { wisdom: 5, curiosity: 5 },
+      },
+      {
+        text: '把舞台让给动物居民，你在台下敲响音乐贝壳。',
+        reply: '这场庆典不是一个人的冒险，而是整座城市共同完成的作品。',
+        target: 'ending:gentle',
+        effects: { kindness: 6, wisdom: 3 },
       },
     ],
   },
 ]
 
 const endings: Record<string, string> = {
-  qinglan: '林清澜线：理性之后的偏爱。她没有要求你立刻完美，只要求你以后别再用沉默装作成熟。',
-  yutang: '夏语棠线：把热闹变成只属于两个人的勇气。她牵着你跑向清晨，说这次谁都不许半路消失。',
-  wanxing: '程晚星线：镜头之外，她终于愿意出现。她给你看最后一张照片，里面的你没有逃开。',
-  yumian: '乔雨眠线：温柔的人也被坚定选择。打烊后的甜品店只留一盏灯，她把新口味第一个交给你。',
-  zhixia: '沈知夏线：成年人把责任和心动都说清楚。她站在夜风里，第一次没有把答案藏进工作里。',
-  suli: '苏梨线：万人围观里，只听见彼此。她关掉直播，认真问你这一次是不是只看着她。',
-  group: '群像和解线：你没有立刻拥有恋人，却拥有了一个愿意重新信任你的生活圈。',
-  career: '事业独行线：你选择先处理事业与自我成长。城市清晨很亮，所有故事都还有回头看的余地。',
-  failed: '失败结局：太多回避让关系冷掉。你离开公寓时，终于明白温柔也需要及时回应。',
+  team: '团队开幕结局：彩虹风车升起一圈光，大家发现最厉害的不是某一个人，而是愿意一起完成一件事。',
+  wise: '智慧回顾结局：每枚徽章都有一段故事。动物居民把今天画成一本节日图册，留给下次嘉年华。',
+  gentle: '温柔合奏结局：你没有站在最亮的地方，却让每个朋友都被看见。星光舞台响起最整齐的掌声。',
+  explorer: '探索小队结局：你找到了最多隐藏线索，狐狸发明家邀请你成为下一届嘉年华路线设计师。',
 }
 
-const savePrefix = 'panorama-romance-slot-'
-const autosaveKey = 'panorama-romance-autosave'
+const savePrefix = 'animal-carnival-slot-'
+const autosaveKey = 'animal-carnival-autosave'
 
 const nodeMap: Record<string, StoryNode> = Object.fromEntries(storyNodes.map((node) => [node.id, node]))
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
 const createInitialGame = (): GameState => ({
-  nodeId: 'arrival',
+  nodeId: 'plaza',
   stats: initialStats,
   flags: [],
-  unlocked: ['arrival'],
+  unlocked: ['plaza'],
   history: [],
-  lastReply: '门锁咔哒一声打开，你站在一场过于精心的意外里。',
+  lastReply: '彩带从头顶飘过，嘉年华的第一声鼓点已经响起。',
 })
 
-const applyEffects = (stats: CharacterStats, effects?: Partial<CharacterStats>): CharacterStats => {
+const applyEffects = (stats: Metrics, effects?: Partial<Metrics>): Metrics => {
   const next = { ...stats }
 
   if (!effects) return next
 
-  for (const character of characters) {
-    const delta = effects[character.id] ?? 0
-    next[character.id] = clamp(next[character.id] + delta, 0, 100)
+  for (const metric of metrics) {
+    const delta = effects[metric.id] ?? 0
+    next[metric.id] = clamp(next[metric.id] + delta, 0, 100)
   }
 
   return next
@@ -681,11 +540,8 @@ function App() {
     (choice) => !choice.requiresFlag || game.flags.includes(choice.requiresFlag),
   )
 
-  const topCharacter = useMemo(
-    () =>
-      characters.reduce((best, character) =>
-        game.stats[character.id] > game.stats[best.id] ? character : best,
-      ),
+  const topMetric = useMemo(
+    () => metrics.reduce((best, metric) => (game.stats[metric.id] > game.stats[best.id] ? metric : best)),
     [game.stats],
   )
 
@@ -696,16 +552,13 @@ function App() {
   }, [game])
 
   const computeEnding = (state: GameState) => {
-    const best = characters.reduce((winner, character) =>
-      state.stats[character.id] > state.stats[winner.id] ? character : winner,
-    )
-    const bestScore = state.stats[best.id]
-    const honestyScore = ['honest-start', 'public-responsibility', 'refused-performance'].filter((flag) =>
-      state.flags.includes(flag),
-    ).length
+    if (state.flags.filter((flag) => flag.startsWith('badge-')).length >= 4 && state.stats.curiosity >= 55) {
+      return 'explorer'
+    }
 
-    if (bestScore < 48 && honestyScore === 0) return 'failed'
-    return best.id
+    if (state.stats.wisdom >= state.stats.kindness && state.stats.wisdom >= state.stats.energy) return 'wise'
+    if (state.stats.kindness >= state.stats.energy) return 'gentle'
+    return 'team'
   }
 
   const choose = (choice: Choice) => {
@@ -730,10 +583,10 @@ function App() {
       }
 
       if (choice.target.startsWith('ending:')) {
-        const ending = choice.target === 'ending:auto' ? computeEnding(baseState) : choice.target.replace('ending:', '')
+        const requestedEnding = choice.target.replace('ending:', '')
         return {
           ...baseState,
-          ending,
+          ending: requestedEnding === 'team' ? computeEnding(baseState) : requestedEnding,
         }
       }
 
@@ -788,11 +641,9 @@ function App() {
       <main className="title-screen">
         <div className="title-panorama" style={{ backgroundImage: `url(${storyNodes[0].image})` }} />
         <section className="title-panel">
-          <span className="kicker">360 全景互动剧情</span>
-          <h1>心动环绕线</h1>
-          <p>
-            一间共享公寓，一条无署名短信，六段靠近与试探。今晚，你必须认真回应每一次心动。
-          </p>
+          <span className="kicker">全年龄 360 全景互动游戏</span>
+          <h1>彩虹尾巴城</h1>
+          <p>动物嘉年华开幕前，彩虹徽章被风吹散。转动视角、寻找线索、帮助居民，把庆典重新点亮。</p>
           <div className="title-actions">
             <button onClick={() => setScreen('game')}>继续游戏</button>
             <button onClick={restart}>新游戏</button>
@@ -837,10 +688,7 @@ function App() {
 
   return (
     <main className="game-screen">
-      <section
-        aria-label={`${node.title} 360 全景剧情画面`}
-        className="panorama-stage"
-      >
+      <section aria-label={`${node.title} 360 全景剧情画面`} className="panorama-stage">
         <PanoramaViewer image={node.image} onYawChange={updateYaw} />
         <div className="vignette" />
 
@@ -867,19 +715,19 @@ function App() {
           <div className="top-meta">
             <span>{node.time}</span>
             <span>{node.place}</span>
-            <span>视角 {Math.round(yaw)}°</span>
+            <span>视角 {yaw}°</span>
           </div>
           <button onClick={() => setScreen('title')}>菜单</button>
         </header>
 
         <aside className="relationship-panel">
-          {characters.map((character) => (
-            <div className="relationship-row" key={character.id}>
+          {metrics.map((metric) => (
+            <div className="relationship-row" key={metric.id}>
               <div>
-                <strong>{character.name}</strong>
-                <span>{character.archetype}</span>
+                <strong>{metric.name}</strong>
+                <span>{metric.archetype}</span>
               </div>
-              <meter max="100" min="0" value={game.stats[character.id]} />
+              <meter max="100" min="0" value={game.stats[metric.id]} />
             </div>
           ))}
         </aside>
@@ -927,7 +775,7 @@ function App() {
             </div>
           ))}
           <p>
-            当前倾向：{topCharacter.name} · {topCharacter.tone}
+            当前倾向：{topMetric.name} · {topMetric.tone}
           </p>
         </aside>
       </section>

@@ -71,6 +71,13 @@ For UI changes, run the dev server and inspect the page in a browser. For layout
 - Ensure text does not overflow buttons, panels, or cards on mobile.
 - Use real visual assets when the site or app benefits from them.
 
+## Content Direction
+
+- This project should only make healthy, family-friendly, all-ages interactive panorama experiences.
+- Romance, dating, flirtation, harem, sexy, suggestive, or adult-oriented story games are prohibited for future iterations.
+- Prefer themes such as animal festivals, nature exploration, city adventures, teamwork, puzzle solving, science, culture, food, travel, sports, and creative learning.
+- When referencing popular visual styles, keep characters, names, settings, and story fully original; do not recreate copyrighted IP characters or scenes.
+
 ## Delegation Rules
 
 Do not use subagents unless the user explicitly asks for delegation, parallel agents, or multi-agent work. If delegation is requested, keep ownership narrow and preserve the assistant as final integrator.
